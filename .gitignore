@@ -1,0 +1,42 @@
+# --- Maxfiy ma'lumot ---
+# .env da bot tokeni va baza paroli bor — hech qachon commit qilinmaydi.
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Yaratiladigan fayllar ---
+# Excel xotirada yasaladi, lekin qo'lda sinov paytida diskka tushib qolmasin
+*.xlsx
+*.log
+
+# --- Tahrirlash artefaktlari ---
+# farm_bot repo'sida .env.save, app.js.bak, .final_schema.sql.swp va
+# xato yozilgan buyruq nomli fayl qolib ketgan edi
+*.bak
+*.save
+*.orig
+*~
+.*.swp
+.*.swo
+
+# --- IDE va OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Claude Code ---
+.claude/settings.local.json
