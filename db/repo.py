@@ -194,23 +194,48 @@ PHARMACY_SELECT = """
 """
 
 
+def _clean_query(query: str) -> str:
+    """Qidiruv matnini tozalaydi: «№5/01» → «5/01».
+
+    Xabarlarda shartnoma «№5/01» ko'rinishida chiqadi, foydalanuvchi esa
+    ko'pincha shuni to'g'ridan-to'g'ri nusxalab yuboradi.
+    """
+    return (query or "").strip().lstrip("№#").strip()
+
+
 async def search_pharmacies(company_id: int, query: str, limit: int = 30):
-    """Nom yoki INN bo'yicha qidiruv — xato yozilganda ham topadi (pg_trgm)."""
+    """Nom, INN yoki shartnoma raqami bo'yicha qidiruv.
+
+    Nom xato yozilgan bo'lsa ham topadi (pg_trgm similarity). Shartnoma
+    raqami to'liq holda ham («5/01»), faqat tartib raqami bilan ham («5»)
+    qabul qilinadi — foydalanuvchiga «shartnoma raqamini yozing» deyiladi,
+    shuning uchun ikkalasi ham ishlashi kerak.
+    """
+    query = _clean_query(query)
     async with get_pool().acquire() as conn:
         if not query:
             return await conn.fetch(
                 PHARMACY_SELECT + " WHERE p.active ORDER BY p.created_at DESC LIMIT $2",
                 company_id, limit,
             )
+        # Faqat raqam kiritilsa — bu shartnoma tartib raqami bo'lishi mumkin.
+        # 9 xonadan uzun bo'lsa INN deb qaraymiz, seq_no bunchalik katta bo'lmaydi.
+        seq_no = int(query) if query.isdigit() and len(query) < 9 else None
         return await conn.fetch(
             PHARMACY_SELECT + """
             WHERE p.active
               AND (p.inn = $2
+                   OR c.contract_no = $2
+                   OR c.seq_no = $3::int
                    OR p.name ILIKE '%' || $2 || '%'
                    OR similarity(lower(p.name), lower($2)) > 0.3)
-            ORDER BY similarity(lower(p.name), lower($2)) DESC, p.name
-            LIMIT $3""",
-            company_id, query, limit,
+            -- Aniq mos kelgani (INN yoki shartnoma) doim birinchi turadi.
+            -- COALESCE shart: shartnomasi yo'q aptekada solishtiruv NULL
+            -- beradi, DESC esa NULL ni ro'yxat boshiga chiqarib yuborardi.
+            ORDER BY COALESCE(p.inn = $2 OR c.contract_no = $2, FALSE) DESC,
+                     similarity(lower(p.name), lower($2)) DESC, p.name
+            LIMIT $4""",
+            company_id, query, seq_no, limit,
         )
 
 
@@ -377,9 +402,15 @@ async def cart_remove(user_id: int, drug_id: int) -> None:
         )
 
 
-async def cart_clear(user_id: int) -> None:
+async def cart_clear(user_id: int) -> int:
+    """Savatni tozalaydi va nechta qator o'chirilganini qaytaradi.
+
+    Son kerak: apteka almashtirilganda foydalanuvchiga «eski savat
+    tozalandi» deb aytamiz, jimgina o'chirib yubormaymiz.
+    """
     async with get_pool().acquire() as conn:
-        await conn.execute("DELETE FROM cart WHERE user_id = $1", user_id)
+        status = await conn.execute("DELETE FROM cart WHERE user_id = $1", user_id)
+        return int(status.rsplit(" ", 1)[-1])  # "DELETE 3" → 3
 
 
 # ============================================================

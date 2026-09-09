@@ -25,7 +25,12 @@ BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 LEFT = Alignment(horizontal="left", vertical="center")
 
-MONEY_FMT = "#,##0"
+# Yaxlitlash bosqichlari har xil (services/pricing.py ga qarang), shuning
+# uchun format ham har xil. Hammasiga "#,##0" qo'yilsa narx 51339.286 →
+# "51 339" bo'lib ko'rinadi va hujjatda miqdor × narx + NDS ≠ jami chiqadi.
+MONEY_FMT = "#,##0"        # butun so'm: qator jami, umumiy jami
+PRICE_FMT = "#,##0.000"    # narx — bazada NUMERIC(15,3)
+NDS_FMT = "#,##0.00"       # NDS summasi — 2 xonagacha yaxlitlanadi
 SPEC_COLUMNS = [
     ("№", 6),
     ("Mahsulot nomi", 45),
@@ -69,7 +74,11 @@ def build_spec_excel(totals: Totals, company, pharmacy) -> bytes:
             cell = ws.cell(row=row, column=col, value=value)
             cell.border = BORDER
             cell.alignment = LEFT if col == 2 else CENTER
-            if col in (5, 7, 8):
+            if col == 5:                       # Narxi (NDSsiz)
+                cell.number_format = PRICE_FMT
+            elif col == 7:                     # NDS summasi
+                cell.number_format = NDS_FMT
+            elif col == 8:                     # Jami summa
                 cell.number_format = MONEY_FMT
         row += 1
 

@@ -5,6 +5,7 @@ Barcha pul hisobi services/pricing.py da — bu yerda hech qanday
 arifmetika yo'q. farm_botda hisob spesifikatsiya va Excel funksiyalarida
 alohida-alohida takrorlangan edi.
 """
+import asyncio
 import logging
 
 from aiogram import Bot, F, Router, types
@@ -31,6 +32,17 @@ MAX_QUANTITY = 1_000_000
 # ============================================================
 #  YORDAMCHILAR
 # ============================================================
+
+async def invalidate_calc(state: FSMContext) -> None:
+    """Savat o'zgardi — foydalanuvchi ko'rgan hisob endi haqiqiy emas.
+
+    `calculated` bayrog'i tushmasa, menejer hisoblab, keyin yana dori
+    qo'shib «✅ Tasdiqlash» bosishi mumkin edi va bazaga u ko'rmagan
+    summa tushardi. Har savat o'zgarishida shu chaqiriladi.
+    """
+    if (await state.get_data()).get("calculated"):
+        await state.update_data(calculated=False)
+
 
 async def track(state: FSMContext, message_id: int) -> None:
     """Vaqtinchalik xabar — hisoblashda o'chiriladi."""
@@ -155,6 +167,16 @@ async def pick_pharmacy(callback: types.CallbackQuery, state: FSMContext, compan
     if not pharmacy or not pharmacy["contract_id"]:
         return await callback.answer("⚠️ Apteka yoki shartnoma topilmadi!", show_alert=True)
 
+    # Savat telegram_id bo'yicha saqlanadi, aptekaga bog'lanmagan. Shuning
+    # uchun boshqa aptekaga o'tilganda uni tozalash SHART — aks holda
+    # tashlab ketilgan bronning dorilari jimgina yangi bronga qo'shilib
+    # ketadi. Ayni apteka qayta bosilsa (masalan tugma ikki marta) savat
+    # saqlanadi — foydalanuvchi terganini yo'qotmaydi.
+    prev_pharmacy_id = (await state.get_data()).get("pharmacy_id")
+    dropped = 0
+    if prev_pharmacy_id != pharmacy_id:
+        dropped = await repo.cart_clear(callback.from_user.id)
+
     await state.clear()
     await state.update_data(pharmacy_id=pharmacy_id)
     await callback.answer()
@@ -163,13 +185,17 @@ async def pick_pharmacy(callback: types.CallbackQuery, state: FSMContext, compan
     # javobni doim shaxsiy chatga yuboramiz.
     chat_id = callback.from_user.id
     date = pharmacy["contract_date"]
+    note = (
+        f"\n\n♻️ <i>Oldingi savatdagi {dropped} ta dori tozalandi.</i>"
+        if dropped else ""
+    )
     await callback.bot.send_message(
         chat_id,
         f"🏢 <b>{esc(pharmacy['name'])}</b>\n"
         f"📄 Shartnoma №{esc(pharmacy['contract_no'])}"
         f"  ({date.strftime('%d.%m.%Y') if date else '—'})\n"
         f"📍 {esc(pharmacy['region_name'])}  |  👤 {esc(pharmacy['manager_name'] or '—')}\n\n"
-        f"Dorilarni tanlang va miqdorini kiriting:",
+        f"Dorilarni tanlang va miqdorini kiriting:{note}",
         reply_markup=kb.cart_actions(),
     )
     await show_drug_menu(callback.bot, chat_id, state)
@@ -225,6 +251,7 @@ async def save_quantity(message: types.Message, state: FSMContext,
     data = await state.get_data()
     total = await repo.cart_add(message.from_user.id, data["drug_id"], int(text))
     await state.set_state(None)
+    await invalidate_calc(state)
     await track(state, message.message_id)
 
     drug = await repo.get_drug(data["drug_id"])
@@ -240,6 +267,7 @@ async def save_quantity(message: types.Message, state: FSMContext,
 @router.message(F.text == kb.BTN_RESET)
 async def reset_cart(message: types.Message, state: FSMContext):
     await repo.cart_clear(message.from_user.id)
+    await invalidate_calc(state)
     await message.answer("🔄 Savat tozalandi.", reply_markup=kb.cart_actions())
     await show_drug_menu(message.bot, message.chat.id, state)
 
@@ -261,9 +289,10 @@ async def edit_cart(message: types.Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith(ikb.CB_DEL_ITEM))
-async def delete_item(callback: types.CallbackQuery):
+async def delete_item(callback: types.CallbackQuery, state: FSMContext):
     drug_id = int(callback.data.removeprefix(ikb.CB_DEL_ITEM))
     await repo.cart_remove(callback.from_user.id, drug_id)
+    await invalidate_calc(state)
     items = await repo.cart_items(callback.from_user.id)
     if items:
         await callback.message.edit_reply_markup(reply_markup=ikb.cart_edit(items))
@@ -315,12 +344,39 @@ async def calculate(message: types.Message, state: FSMContext, company):
 #  TASDIQLASH
 # ============================================================
 
+# Har menejer uchun bitta qulf. aiogram update'larni parallel qayta
+# ishlaydi, shuning uchun tez ikki marta bosilgan «✅ Tasdiqlash» ikkala
+# handlerga ham bo'sh bo'lmagan savatni ko'rsatib, ikkita bron yaratishi
+# mumkin edi. Qulf ostida ikkinchisi savat allaqachon tozalangan holatni
+# ko'radi va to'xtaydi. Lug'at xodimlar soni bilan cheklangan — o'smaydi.
+_confirm_locks: dict[int, asyncio.Lock] = {}
+
+
+def _confirm_lock(user_id: int) -> asyncio.Lock:
+    lock = _confirm_locks.get(user_id)
+    if lock is None:
+        lock = _confirm_locks[user_id] = asyncio.Lock()
+    return lock
+
+
 @router.message(F.text == kb.BTN_CONFIRM)
 async def confirm(message: types.Message, state: FSMContext, user, company,
                   has_panel: bool, settings):
+    async with _confirm_lock(message.from_user.id):
+        await _confirm(message, state, user, company, has_panel, settings)
+
+
+async def _confirm(message: types.Message, state: FSMContext, user, company,
+                   has_panel: bool, settings):
     data = await state.get_data()
     if not data.get("pharmacy_id"):
-        return await message.answer("⚠️ Apteka tanlanmagan!", reply_markup=kb.main_menu(has_panel))
+        # Tugma ikki marta bosilgan bo'lsa, birinchisi bronni yaratib
+        # state'ni tozalab bo'lgan — shuning uchun matn yumshoq.
+        return await message.answer(
+            "⚠️ Faol bron yo'q. Bron endigina tasdiqlangan bo'lsa — u yuqorida. "
+            "Yangisi uchun «📋 Bron» dan boshlang.",
+            reply_markup=kb.main_menu(has_panel),
+        )
     if not data.get("calculated"):
         return await message.answer("⚠️ Avval «🛒 Hisoblash» tugmasini bosing.")
 

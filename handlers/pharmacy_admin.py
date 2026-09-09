@@ -204,16 +204,8 @@ async def edit_pharmacy(message: types.Message, state: FSMContext):
     )
 
 
-@router.message(PharmacyState.edit_search)
-async def edit_pharmacy_search(message: types.Message, state: FSMContext,
-                               company, user):
-    if await stop_flow(message, state, user["role"]):
-        return
-    rows = await repo.search_pharmacies(company["id"], (message.text or "").strip(), limit=1)
-    if not rows:
-        return await message.answer("❌ Apteka topilmadi. Qayta kiriting:")
-
-    row = rows[0]
+async def open_edit_card(message: types.Message, state: FSMContext, row) -> None:
+    """Tanlangan aptekani tahrirlash kartochkasini ochadi."""
     await state.update_data(edit_ph_id=row["id"])
     await state.set_state(PharmacyState.edit_field)
     await message.answer(
@@ -221,6 +213,49 @@ async def edit_pharmacy_search(message: types.Message, state: FSMContext,
         parse_mode="HTML",
         reply_markup=edit_field_kb(),
     )
+
+
+@router.message(PharmacyState.edit_search)
+async def edit_pharmacy_search(message: types.Message, state: FSMContext,
+                               company, user):
+    """Qidiruv natijasi bitta bo'lsa darrov ochadi, ko'p bo'lsa — tanlatadi.
+
+    Avval bu yerda limit=1 turardi: «Shifo» deb qidirilsa o'nlab aptekadan
+    tasodifiy birinchisi jimgina ochilib, admin boshqa aptekaning INN yoki
+    nomini o'zgartirib yuborishi mumkin edi.
+    """
+    if await stop_flow(message, state, user["role"]):
+        return
+    query = (message.text or "").strip()
+    if len(query) < 2:
+        return await message.answer("❌ Kamida 2 ta belgi kiriting:")
+
+    rows = await repo.search_pharmacies(company["id"], query, limit=20)
+    if not rows:
+        return await message.answer("❌ Apteka topilmadi. Qayta kiriting:")
+    if len(rows) == 1:
+        return await open_edit_card(message, state, rows[0])
+
+    await message.answer(
+        f"🔎 <b>{len(rows)} ta natija</b> — qaysinisini tahrirlaymiz?",
+        parse_mode="HTML",
+        reply_markup=ikb.pharmacy_results(rows, prefix=ikb.CB_EDIT_PHARMACY),
+    )
+
+
+@router.callback_query(PharmacyState.edit_search, F.data.startswith(ikb.CB_EDIT_PHARMACY))
+async def edit_pharmacy_pick(callback: types.CallbackQuery, state: FSMContext, company):
+    pharmacy_id = int(callback.data.removeprefix(ikb.CB_EDIT_PHARMACY))
+    row = await repo.get_pharmacy(company["id"], pharmacy_id)
+    if not row:
+        return await callback.answer("⚠️ Apteka topilmadi!", show_alert=True)
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass  # eski xabar bo'lsa tugma qolib ketaversin
+    await open_edit_card(callback.message, state, row)
+    await callback.answer()
 
 
 @router.message(PharmacyState.edit_field)

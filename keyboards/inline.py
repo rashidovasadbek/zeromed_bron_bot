@@ -9,7 +9,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # --- Prefikslar ---
-CB_PICK_PHARMACY = "ph:"      # apteka tanlash (inline qidiruvdan)
+CB_PICK_PHARMACY = "ph:"      # apteka tanlash (bron oqimi)
+CB_EDIT_PHARMACY = "phed:"    # apteka tanlash (admin panel — tahrirlash)
 CB_ADD_DRUG = "cart:"         # savatga dori qo'shish
 CB_DEL_ITEM = "cartdel:"      # savatdan o'chirish
 CB_COMPANY_PICK = "co:"       # (kelajakda) kompaniya tanlash
@@ -32,17 +33,21 @@ def pharmacy_search_button() -> InlineKeyboardMarkup:
     ]])
 
 
-def pharmacy_results(rows) -> InlineKeyboardMarkup:
+def pharmacy_results(rows, prefix: str = CB_PICK_PHARMACY) -> InlineKeyboardMarkup:
     """Matnli qidiruv natijalari.
 
     Inline rejim (@BotFather) o'chiq bo'lsa ham bron qilish ishlashi
     uchun — botni bitta sozlamaga bog'lab qo'ymaymiz.
+
+    prefix bilan bir xil ro'yxat ikki oqimda ishlatiladi: bron (CB_PICK_PHARMACY)
+    va admin panelda tahrirlash (CB_EDIT_PHARMACY).
     """
     b = InlineKeyboardBuilder()
     for r in rows:
+        # Tahrirlash oqimida shartnomasiz apteka ham chiqadi — contract_no NULL
         b.row(InlineKeyboardButton(
-            text=f"🏢 {r['name']} — №{r['contract_no']}",
-            callback_data=f"{CB_PICK_PHARMACY}{r['id']}",
+            text=f"🏢 {r['name']} — №{r['contract_no'] or '—'}",
+            callback_data=f"{prefix}{r['id']}",
         ))
     return b.as_markup()
 
