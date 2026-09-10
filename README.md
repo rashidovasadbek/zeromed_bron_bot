@@ -4,8 +4,8 @@
 olingan — arxitektura va bron oqimi bir xil, faqat kompaniya rekvizitlari
 (`db/migrations/002_seed.sql`) va `.env` boshqa.
 
-> ⚠️ Bot username, guruh ID'lari va deploy manzili hali belgilanmagan —
-> pastdagi bo'limlarni to'ldiring.
+Deploy qilingan: [@zeromed_bron_bot](https://t.me/zeromed_bron_bot),
+`zeromedbot.service` — pastdagi «Deploy» bo'limiga qarang.
 
 Menejer aptekani tanlaydi → dorilarni bron qiladi → Excel spesifikatsiya oladi → bron **bron guruhiga** tushadi → to'lov qilingach **oplata guruhiga** o'tadi.
 
@@ -91,17 +91,25 @@ Bron yaratilganda narx, NDS va qator jami `bron_item` ga **snapshot** qilinadi �
 
 ## Deploy
 
-> TODO: server, papka, baza nomi va systemd unit hali belgilanmagan.
-> Xuddi shu serverda ishlaydigan bo'lsa, **DB nomi va papkani
-> `mediwell02bronbot` (baza `zeromed_bron`) bilan to'qnashtirmang** —
-> masalan baza `zeromed_co_bron`, unit `zeromedcobot.service`.
+| Nima | Qiymat |
+|---|---|
+| Server | `asadbek@193.180.209.245` (Ubuntu 22.04, Python 3.10.12, PG 18.1) |
+| Papka | `/home/asadbek/farm/zeromed_bron_bot` |
+| Baza | `zeromed_co_bron` / foydalanuvchi `zeromed_co_user` |
+| systemd unit | `zeromedbot.service` |
+| Bot | [@zeromed_bron_bot](https://t.me/zeromed_bron_bot) |
+| Bron guruhi | `ZEROMED_BRON_GROUP` — `-1004419725244` |
+| Oplata guruhi | `ZROMED_OPLATA` — `-1004302080755` |
+
+Ikkala guruh ham **supergroup**, bot ikkalasida ham admin.
 
 ```bash
+cd /home/asadbek/farm/zeromed_bron_bot
 git pull origin main
 ./venv/bin/pip install -r requirements.txt   # requirements o'zgargan bo'lsa
 ./venv/bin/python -m db.migrate              # yangi migration bo'lsa
-sudo systemctl restart <unit-nomi>.service
-journalctl -u <unit-nomi>.service -f
+sudo systemctl restart zeromedbot.service
+journalctl -u zeromedbot.service -f
 ```
 
 Sog'lom start log'i: `Bot ishga tushdi... 🚀`
