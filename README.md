@@ -38,7 +38,7 @@ Testlar yoki linter sozlamasi yo'q.
 
 Adminlar `.env` da emas, **bazada** (`app_user.role`). Admin qo'shish uchun kod ham, qayta ishga tushirish ham kerak emas.
 
-> Guruhlar hozir oddiy `group` turida. Supergroup'ga o'tkazilsa **ID o'zgaradi** — `.env` ni yangilash kerak.
+> Ikkala guruh ham **supergroup** — ID'lari endi o'zgarmaydi.
 
 ## Arxitektura
 
