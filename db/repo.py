@@ -225,14 +225,16 @@ async def search_pharmacies(company_id: int, query: str, limit: int = 30):
             PHARMACY_SELECT + """
             WHERE p.active
               AND (p.inn = $2
-                   OR c.contract_no = $2
+                   -- upper(): raqamda endi harf bor (S5/50/03), menejer
+                   -- uni kichik harf bilan yozsa ham topilishi kerak
+                   OR upper(c.contract_no) = upper($2)
                    OR c.seq_no = $3::int
                    OR p.name ILIKE '%' || $2 || '%'
                    OR similarity(lower(p.name), lower($2)) > 0.3)
             -- Aniq mos kelgani (INN yoki shartnoma) doim birinchi turadi.
             -- COALESCE shart: shartnomasi yo'q aptekada solishtiruv NULL
             -- beradi, DESC esa NULL ni ro'yxat boshiga chiqarib yuborardi.
-            ORDER BY COALESCE(p.inn = $2 OR c.contract_no = $2, FALSE) DESC,
+            ORDER BY COALESCE(p.inn = $2 OR upper(c.contract_no) = upper($2), FALSE) DESC,
                      similarity(lower(p.name), lower($2)) DESC, p.name
             LIMIT $4""",
             company_id, query, seq_no, limit,
@@ -258,22 +260,34 @@ async def create_pharmacy_with_contract(
     region_id: int,
     manager_user_id: int | None,
     phone: str | None,
-    account_code: str,
     contract_date: date | None = None,
 ):
     """Apteka + shartnomani bitta tranzaksiyada yaratadi.
 
-    Shartnoma raqami A/C:
+    Shartnoma raqami SA/B/C (masalan S5/50/03):
+      S — yo'nalish harfi (company.contract_prefix)
       A — counter jadvalidan, UPDATE ... RETURNING bilan (atomar).
           farm_botdagi MAX(seq_no)+1 usuli ikki admin bir vaqtda
           qo'shganda bir xil raqam berardi — bu yerda mumkin emas.
-      C — kompaniyaning sho't kodi (bu botda '02')
+      B — viloyat kodi (region.code)
+      C — kompaniyaning sho't kodi (company.account_code)
+
+    Harf va sho't kodi tranzaksiya ichida bazadan o'qiladi, chaqiruvchidan
+    olinmaydi: services/company.py keshi eskirgan bo'lsa ham raqam to'g'ri
+    chiqadi va counter bilan bir xil tranzaksiyada bo'ladi.
     """
     async with get_pool().acquire() as conn:
         async with conn.transaction():
             region = await conn.fetchrow("SELECT code FROM region WHERE id = $1", region_id)
             if not region:
                 raise ValueError("Viloyat topilmadi")
+
+            company = await conn.fetchrow(
+                "SELECT contract_prefix, account_code FROM company WHERE id = $1",
+                company_id,
+            )
+            if not company:
+                raise ValueError("Kompaniya topilmadi")
 
             pharmacy_id = await conn.fetchval(
                 """INSERT INTO pharmacy (name, inn, region_id, manager_user_id, phone)
@@ -289,14 +303,17 @@ async def create_pharmacy_with_contract(
             if seq_no is None:
                 raise ValueError("counter jadvalida kompaniya yo'q")
 
-            contract_no = f"{seq_no}/{account_code}"
+            contract_no = (
+                f"{company['contract_prefix']}{seq_no}"
+                f"/{region['code']}/{company['account_code']}"
+            )
             contract = await conn.fetchrow(
                 """INSERT INTO contract (pharmacy_id, company_id, seq_no, region_code,
                                          account_code, contract_no, contract_date)
                    VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, CURRENT_DATE))
                    RETURNING *""",
                 pharmacy_id, company_id, seq_no, region["code"],
-                account_code, contract_no, contract_date,
+                company["account_code"], contract_no, contract_date,
             )
             return pharmacy_id, contract
 

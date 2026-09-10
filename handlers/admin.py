@@ -496,9 +496,10 @@ def requisites_text(c) -> str:
         f"🔢 INN: <code>{esc(c['inn'] or '—')}</code>\n"
         f"🏛 MFO: <code>{esc(c['mfo'] or '—')}</code>\n"
         f"👔 Direktor: {esc(c['director'] or '—')}\n\n"
-        f"📄 Shartnoma raqami formati: <code>A/{esc(c['account_code'])}</code>\n"
-        f"<i>A — tartib raqami, "
-        f"{esc(c['account_code'])} — shu yo'nalishning sho't kodi</i>\n\n"
+        f"📄 Shartnoma raqami formati: "
+        f"<code>{esc(c['contract_prefix'])}A/B/{esc(c['account_code'])}</code>\n"
+        f"<i>{esc(c['contract_prefix'])} — yo'nalish harfi, A — tartib raqami, "
+        f"B — viloyat kodi, {esc(c['account_code'])} — sho't kodi</i>\n\n"
         f"O'zgartirish uchun maydonni tanlang:"
     )
 

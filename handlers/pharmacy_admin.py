@@ -144,7 +144,6 @@ async def new_pharmacy_save(message: types.Message, state: FSMContext,
             region_id=data["ph_region_id"],
             manager_user_id=data.get("ph_manager_id"),
             phone=phone,
-            account_code=company["account_code"],
         )
     except Exception as e:
         logger.exception("Apteka qo'shishda xato")
@@ -163,7 +162,8 @@ async def new_pharmacy_save(message: types.Message, state: FSMContext,
         f"📍 {esc(data['ph_region_name'])}\n"
         f"📞 {esc(phone) if phone else '—'}\n"
         f"📄 Shartnoma №<b>{esc(contract['contract_no'])}</b>\n"
-        f"   <i>(A={seq} / C={esc(contract['account_code'])})</i>\n"
+        f"   <i>(A={seq} — tartib, B={esc(contract['region_code'])} — viloyat, "
+        f"C={esc(contract['account_code'])} — sho't)</i>\n"
         f"📅 {contract['contract_date'].strftime('%d.%m.%Y')}",
         parse_mode="HTML",
         reply_markup=kb.admin_menu(user["role"]),

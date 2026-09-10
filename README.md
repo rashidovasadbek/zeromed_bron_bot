@@ -67,10 +67,16 @@ To'lov tugmasini faqat `admin` va `buxgalter` bosa oladi.
 
 ### Shartnoma raqami
 
-Format `A/C`:
+Format `SA/B/C` — masalan **`S5/50/03`**:
+- **S** — yo'nalish harfi (`company.contract_prefix`) — bu botda **`S`** (Sobir)
 - **A** — `counter` jadvalidan, `UPDATE … RETURNING` bilan (atomar, poyga yo'q)
-- **C** — kompaniyaning sho't kodi — bu botda **`01`** (taxminiy, tasdiqlanguncha
-  `db/migrations/002_seed.sql`da o'zgartirish mumkin)
+- **B** — viloyat kodi (`region.code`: 50=Namangan, 60=Andijon, …)
+- **C** — kompaniyaning sho't kodi (`company.account_code`) — bu botda **`03`**
+
+Harf ham, sho't kodi ham bazada (`company` jadvalida), kodda emas. Ikkalasi
+ham har bir shartnoma raqamiga tushadi, shuning uchun admin paneldan
+tahrirlanmaydi (`COMPANY_FIELDS` ro'yxatida yo'q) — o'zgartirish kerak
+bo'lsa yangi migration yoziladi.
 
 ### Pul hisobi
 
